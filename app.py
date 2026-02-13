@@ -7,7 +7,7 @@ from datetime import datetime, date, timedelta
 # ==========================================
 # CONFIGURATION
 # ==========================================
-MEMBRES_EQUIPE = ["Collaborateur 1", "Collaborateur 2", "Collaborateur 3", "Collaborateur 4", "Collaborateur 5"]
+MEMBRES_EQUIPE = ["Williame", "Ritchie", "Emmanuel", "Kyle", "Grégory"]
 MANAGER_PASSWORD = "admin"
 DATA_FILE = "planning_2026.json"
 CONGES_FILE = "conges_2026.json"
@@ -98,7 +98,7 @@ if page == "📅 Voir le Planning":
     use_container_width=True, 
     height=700,
     column_config={
-        col: st.column_config.TextColumn(width="50") for col in MEMBRES_EQUIPE
+        col: st.column_config.TextColumn(width=50) for col in MEMBRES_EQUIPE
     }
 )
     
