@@ -24,7 +24,7 @@ st.markdown("""
     <style>
     .main { background-color: #ffffff; }
     thead tr th { background-color: #2c3e50 !important; color: white !important; font-weight: bold !important; }
-    .stDataFrame td { text-align: center !important; font-size: 16px !important; }
+    .stDataFrame td { text-align: center !important; font-size: 18px !important; }
     
     .recap-container {
         padding: 10px;
@@ -137,15 +137,37 @@ if page == "📅 Voir le Planning":
     )
 
 # ==========================================
-# PAGE 2 : CONGÉS
+# PAGE 2 : CONGÉS (DEMANDE DE PÉRIODE)
 # ==========================================
 elif page == "✉️ Demande de Congés":
-    st.header("Soumettre une demande")
-    with st.form("f"):
-        nom = st.selectbox("Nom", MEMBRES_EQUIPE); deb = st.date_input("Du"); fin = st.date_input("Au"); mot = st.text_area("Motif")
-        if st.form_submit_button("Envoyer"):
-            data_conges[datetime.now().strftime("%Y%m%d%H%M%S")] = {"nom":nom,"debut":str(deb),"fin":str(fin),"motif":mot}
-            save_json(CONGES_FILE, data_conges); st.success("Demande envoyée !")
+    st.header("Soumettre une demande de congés ou vacances")
+    st.info("Sélectionnez votre nom et la période souhaitée. Votre demande sera examinée par le manager.")
+    
+    with st.form("form_conges"):
+        c1, c2 = st.columns(2)
+        nom = c1.selectbox("Votre nom", MEMBRES_EQUIPE)
+        type_conge = c2.selectbox("Type de demande", ["Vacances ✈️", "Absence 🚫", "Télétravail 🏠"])
+        
+        d_deb = c1.date_input("Date de début", date.today())
+        d_fin = c2.date_input("Date de fin", date.today())
+        
+        motif = st.text_area("Note / Motif (ex: Vacances d'été, Rendez-vous spécial...)")
+        
+        if st.form_submit_button("Envoyer la demande de période"):
+            if d_deb <= d_fin:
+                key = datetime.now().strftime("%Y%m%d_%H%M%S")
+                data_conges[key] = {
+                    "nom": nom,
+                    "type": type_conge,
+                    "debut": str(d_deb),
+                    "fin": str(d_fin),
+                    "motif": motif,
+                    "date_demande": datetime.now().strftime("%d/%m/%Y %H:%M")
+                }
+                save_json(CONGES_FILE, data_conges)
+                st.success(f"Demande envoyée pour la période du {d_deb.strftime('%d/%m/%Y')} au {d_fin.strftime('%d/%m/%Y')} !")
+            else:
+                st.error("Erreur : La date de fin doit être après la date de début.")
 
 # ==========================================
 # PAGE 3 : MANAGER
@@ -153,15 +175,14 @@ elif page == "✉️ Demande de Congés":
 elif page == "🔒 Espace Manager":
     st.header("Administration")
     if st.text_input("Mot de passe", type="password") == MANAGER_PASSWORD:
-        t1, t2, t3 = st.tabs(["Modification Unique / Période", "🔄 Actions Groupées", "Gérer les Demandes"])
+        t1, t2, t3 = st.tabs(["Modification Planning", "🔄 Actions Groupées", "✉️ Demandes reçues"])
         
         with t1:
             type_mod = st.radio("Type de modification", ["Un seul jour", "Une période (plusieurs jours)"], horizontal=True)
-            
             col_a, col_b = st.columns(2)
             u_m = col_a.selectbox("Collaborateur concerné", MEMBRES_EQUIPE)
             s_m = col_b.selectbox("Nouveau Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances"])
-            n_m = col_b.text_input("Note / Précision (optionnel)")
+            n_m = col_b.text_input("Note / Précision")
             
             if type_mod == "Un seul jour":
                 d_m = col_a.date_input("Choisir le jour", date(2026,1,1))
@@ -169,15 +190,12 @@ elif page == "🔒 Espace Manager":
             else:
                 d_debut = col_a.date_input("Date de début", date(2026,1,1))
                 d_fin = col_a.date_input("Date de fin", date(2026,1,1))
+                dates_a_modifier = []
                 if d_debut <= d_fin:
-                    dates_a_modifier = []
                     curr = d_debut
                     while curr <= d_fin:
                         dates_a_modifier.append(curr)
                         curr += timedelta(days=1)
-                else:
-                    st.error("La date de fin doit être après la date de début.")
-                    dates_a_modifier = []
 
             if st.button("Enregistrer les modifications"):
                 if dates_a_modifier:
@@ -186,11 +204,11 @@ elif page == "🔒 Espace Manager":
                         if ds not in data_planning: data_planning[ds] = {}
                         data_planning[ds][u_m] = {"statut": s_m, "note": n_m}
                     save_json(DATA_FILE, data_planning)
-                    st.success(f"Mise à jour effectuée pour {len(dates_a_modifier)} jour(s) !")
+                    st.success("Mise à jour effectuée !")
                     st.rerun()
 
         with t2:
-            st.subheader("Règles annuelles (ex: Tous les Mardis)")
+            st.subheader("Règles annuelles")
             c1, c2, c3 = st.columns(3)
             user_rec = c1.selectbox("Qui ?", MEMBRES_EQUIPE, key="rec1")
             day_rec = c2.selectbox("Chaque...", JOURS_FR[:6], key="rec2")
@@ -207,6 +225,16 @@ elif page == "🔒 Espace Manager":
                 save_json(DATA_FILE, data_planning); st.success("Règle appliquée !"); st.rerun()
 
         with t3:
-            for k, v in list(data_conges.items()):
-                st.write(f"**{v['nom']}** : {v['debut']} au {v['fin']}")
-                if st.button(f"Supprimer {k}"): del data_conges[k]; save_json(CONGES_FILE, data_conges); st.rerun()
+            st.subheader("Boîte de réception des demandes")
+            if not data_conges:
+                st.write("Aucune demande en attente.")
+            else:
+                for k, v in list(data_conges.items()):
+                    with st.expander(f"Demande de {v['nom']} - {v['type']}"):
+                        st.write(f"**Période :** du {v['debut']} au {v['fin']}")
+                        st.write(f"**Motif :** {v['motif']}")
+                        st.write(f"*Envoyée le : {v.get('date_demande', 'Date inconnue')}*")
+                        if st.button(f"Supprimer / Archiver la demande {k}"):
+                            del data_conges[k]
+                            save_json(CONGES_FILE, data_conges)
+                            st.rerun()
