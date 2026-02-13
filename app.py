@@ -93,7 +93,14 @@ if page == "📅 Voir le Planning":
             icones = {"Présent": "✅", "Télétravail": "🏠", "Absent": "🚫", "Fermeture": "🔑", "Vacances": "✈️"}
             df.at[row_label, m] = icones.get(statut, "✅")
 
-    st.dataframe(df, use_container_width=True, height=700)
+    st.dataframe(
+    df, 
+    use_container_width=True, 
+    height=700,
+    column_config={
+        col: st.column_config.TextColumn(width="small") for col in MEMBRES_EQUIPE
+    }
+)
     
     st.info("Légende : ✅ Présent | 🏠 Télétravail | 🚫 Absent | 🔑 Fermeture | ✈️ Vacances")
 
