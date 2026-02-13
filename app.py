@@ -57,7 +57,6 @@ def get_stats():
     stats = {m: {"fermetures": 0, "vacances": 0, "absences": 0} for m in MEMBRES_EQUIPE}
     for d_key, membres in data_planning.items():
         for m, info in membres.items():
-            # Gestion compatibilité (si info est un string ou un dict)
             statut = info["statut"] if isinstance(info, dict) else info
             if m in stats:
                 if statut == "Fermeture": stats[m]["fermetures"] += 1
@@ -110,11 +109,10 @@ if page == "📅 Voir le Planning":
     for d in jours:
         d_str = d.strftime("%Y-%m-%d")
         row_label = f"{JOURS_FR[d.weekday()]} {d.day}"
-        count_present = 5 
+        count_present = len(MEMBRES_EQUIPE) 
         
         for m in MEMBRES_EQUIPE:
             info = data_planning.get(d_str, {}).get(m, "Présent")
-            # Extraction statut et note
             if isinstance(info, dict):
                 statut = info.get("statut", "Présent")
                 note = info.get("note", "")
@@ -127,8 +125,6 @@ if page == "📅 Voir le Planning":
             
             icones = {"Présent":"✅","Télétravail":"🏠","Absent":"🚫","Fermeture":"🔑","Vacances":"✈️"}
             emoj = icones.get(statut, "✅")
-            
-            # Affichage de la note si elle existe
             df.at[row_label, m] = f"{note} {emoj}" if note else emoj
         
         df.at[row_label, "Total Présents"] = f"👥 {count_present}"
@@ -157,23 +153,44 @@ elif page == "✉️ Demande de Congés":
 elif page == "🔒 Espace Manager":
     st.header("Administration")
     if st.text_input("Mot de passe", type="password") == MANAGER_PASSWORD:
-        t1, t2, t3 = st.tabs(["Modification Unique", "🔄 Actions Groupées", "Gérer les Demandes"])
+        t1, t2, t3 = st.tabs(["Modification Unique / Période", "🔄 Actions Groupées", "Gérer les Demandes"])
         
         with t1:
-            col_a, col_b = st.columns(2)
-            d_m = col_a.date_input("Jour", date(2026,1,1))
-            u_m = col_a.selectbox("Qui", MEMBRES_EQUIPE)
-            s_m = col_b.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances"])
-            n_m = col_b.text_input("Note / Précision (ex: Médecin PM)")
+            type_mod = st.radio("Type de modification", ["Un seul jour", "Une période (plusieurs jours)"], horizontal=True)
             
-            if st.button("Mettre à jour"):
-                ds = d_m.strftime("%Y-%m-%d")
-                if ds not in data_planning: data_planning[ds] = {}
-                data_planning[ds][u_m] = {"statut": s_m, "note": n_m}
-                save_json(DATA_FILE, data_planning); st.success("Mis à jour !"); st.rerun()
+            col_a, col_b = st.columns(2)
+            u_m = col_a.selectbox("Collaborateur concerné", MEMBRES_EQUIPE)
+            s_m = col_b.selectbox("Nouveau Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances"])
+            n_m = col_b.text_input("Note / Précision (optionnel)")
+            
+            if type_mod == "Un seul jour":
+                d_m = col_a.date_input("Choisir le jour", date(2026,1,1))
+                dates_a_modifier = [d_m]
+            else:
+                d_debut = col_a.date_input("Date de début", date(2026,1,1))
+                d_fin = col_a.date_input("Date de fin", date(2026,1,1))
+                if d_debut <= d_fin:
+                    dates_a_modifier = []
+                    curr = d_debut
+                    while curr <= d_fin:
+                        dates_a_modifier.append(curr)
+                        curr += timedelta(days=1)
+                else:
+                    st.error("La date de fin doit être après la date de début.")
+                    dates_a_modifier = []
+
+            if st.button("Enregistrer les modifications"):
+                if dates_a_modifier:
+                    for d in dates_a_modifier:
+                        ds = d.strftime("%Y-%m-%d")
+                        if ds not in data_planning: data_planning[ds] = {}
+                        data_planning[ds][u_m] = {"statut": s_m, "note": n_m}
+                    save_json(DATA_FILE, data_planning)
+                    st.success(f"Mise à jour effectuée pour {len(dates_a_modifier)} jour(s) !")
+                    st.rerun()
 
         with t2:
-            st.subheader("Règles annuelles")
+            st.subheader("Règles annuelles (ex: Tous les Mardis)")
             c1, c2, c3 = st.columns(3)
             user_rec = c1.selectbox("Qui ?", MEMBRES_EQUIPE, key="rec1")
             day_rec = c2.selectbox("Chaque...", JOURS_FR[:6], key="rec2")
