@@ -98,7 +98,7 @@ if page == "📅 Voir le Planning":
     use_container_width=True, 
     height=700,
     column_config={
-        col: st.column_config.TextColumn(width="small") for col in MEMBRES_EQUIPE
+        col: st.column_config.TextColumn(width="50") for col in MEMBRES_EQUIPE
     }
 )
     
