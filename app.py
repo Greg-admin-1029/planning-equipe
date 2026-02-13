@@ -8,7 +8,7 @@ from datetime import datetime, date, timedelta
 # CONFIGURATION DE L'ÉQUIPE (À MODIFIER ICI)
 # ==========================================
 MEMBRES_EQUIPE = ["William", "Ritchie", "Emmanuel", "Kyle", "Kwamy"]
-MANAGER_PASSWORD = "Grégory"  # Code simple pour l'accès manager
+MANAGER_PASSWORD = "1989"  # Code simple pour l'accès manager
 DATA_FILE = "planning_2026.json"
 
 # Configuration de la page
