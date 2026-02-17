@@ -18,7 +18,7 @@ MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Ao
 st.set_page_config(page_title="Planning 2026", layout="wide")
 
 # ==========================================
-# STYLE CSS (Forçage du noir pour la sidebar)
+# STYLE CSS
 # ==========================================
 st.markdown("""
     <style>
@@ -28,11 +28,14 @@ st.markdown("""
     }
     .recap-name { font-weight: bold; color: #000000 !important; }
     .recap-stats { font-size: 13px; color: #000000 !important; }
-    /* Style pour les titres de semaines */
     .week-header {
-        background-color: #2c3e50; color: white; padding: 5px 15px;
-        border-radius: 5px; margin-top: 20px; margin-bottom: 10px; font-weight: bold;
+        background-color: #2c3e50; color: white; padding: 8px 15px;
+        border-radius: 5px; margin-top: 25px; margin-bottom: 5px; font-weight: bold;
+        font-size: 18px;
     }
+    /* Forcer le style des tables Streamlit */
+    table { width: 100%; border-collapse: collapse; }
+    th { background-color: #f8f9fa !important; color: #2c3e50 !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -63,7 +66,7 @@ def get_stats():
     return stats
 
 # ==========================================
-# BARRE LATÉRALE (Inchangée selon tes souhaits)
+# BARRE LATÉRALE
 # ==========================================
 with st.sidebar:
     st.title("Menu")
@@ -97,18 +100,16 @@ if page == "📅 Voir le Planning":
     if mois_sel == 12: end_date = date(2027, 1, 1) - timedelta(days=1)
     else: end_date = date(2026, mois_sel + 1, 1) - timedelta(days=1)
 
-    # 1. On regroupe les jours par numéro de semaine
     jours_par_semaine = {}
     curr = start_date
     while curr <= end_date:
-        if curr.weekday() < 6: # Exclure dimanche
+        if curr.weekday() < 6: # Lundi à Samedi
             semaine_num = curr.isocalendar()[1]
             if semaine_num not in jours_par_semaine:
                 jours_par_semaine[semaine_num] = []
             jours_par_semaine[semaine_num].append(curr)
         curr += timedelta(days=1)
 
-    # 2. On affiche un tableau par semaine
     for num, jours in jours_par_semaine.items():
         st.markdown(f'<div class="week-header">Semaine {num}</div>', unsafe_allow_html=True)
         
@@ -133,17 +134,17 @@ if page == "📅 Voir le Planning":
             alerte = "🚨" if count_present < 3 else "👥"
             df.at[row_label, "Total Présents"] = f"{alerte} {count_present}"
 
-        # Application de couleurs pour forcer la visibilité (Léo)
+        # --- LOGIQUE DE COULEUR (Léo) ---
         def highlight_days(row):
-            # Si c'est un Samedi, on met un fond bleu très clair
             if "Samedi" in row.name:
-                return ['background-color: #e8f4f8'] * len(row)
+                # Gris foncé avec texte blanc pour le Samedi
+                return ['background-color: #444444; color: white; font-weight: bold'] * len(row)
             return [''] * len(row)
 
         st.table(df.style.apply(highlight_days, axis=1))
 
 # ==========================================
-# PAGE 2 & 3 (Logique identique aux versions précédentes)
+# PAGE 2 & 3 (Inchangées)
 # ==========================================
 elif page == "✉️ Demande de Congés":
     st.header("Soumettre une demande")
