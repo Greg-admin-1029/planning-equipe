@@ -18,24 +18,30 @@ MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Ao
 st.set_page_config(page_title="Planning 2026", layout="wide")
 
 # ==========================================
-# STYLE CSS
+# STYLE CSS (Forçage du Noir et Dark Mode)
 # ==========================================
 st.markdown("""
     <style>
+    /* Sidebar : Texte bien noir pour la lisibilité */
     .recap-container {
         padding: 10px; border-radius: 5px; background-color: #f0f2f6;
         margin-bottom: 10px; border-left: 5px solid #2c3e50; color: #000000 !important;
     }
     .recap-name { font-weight: bold; color: #000000 !important; }
     .recap-stats { font-size: 13px; color: #000000 !important; }
+    
+    /* Header de Semaine */
     .week-header {
-        background-color: #2c3e50; color: white; padding: 8px 15px;
-        border-radius: 5px; margin-top: 25px; margin-bottom: 5px; font-weight: bold;
-        font-size: 18px;
+        background-color: #1e1e1e; color: #ffffff; padding: 10px 15px;
+        border-radius: 5px; margin-top: 25px; margin-bottom: 5px; 
+        font-weight: bold; font-size: 18px; border: 1px solid #333;
     }
-    /* Forcer le style des tables Streamlit */
-    table { width: 100%; border-collapse: collapse; }
-    th { background-color: #f8f9fa !important; color: #2c3e50 !important; }
+
+    /* Forçage du tableau en mode sombre */
+    .stTable { background-color: #0e1117 !important; color: white !important; }
+    table { width: 100%; border-collapse: collapse; background-color: #0e1117 !important; color: white !important; }
+    th { background-color: #1e1e1e !important; color: white !important; border: 1px solid #333 !important; }
+    td { border: 1px solid #333 !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -87,7 +93,7 @@ with st.sidebar:
         """, unsafe_allow_html=True)
 
 # ==========================================
-# PAGE 1 : PLANNING PAR SEMAINES
+# PAGE 1 : PLANNING (DARK MODE)
 # ==========================================
 if page == "📅 Voir le Planning":
     st.header("Planning de l'équipe 2026")
@@ -103,19 +109,17 @@ if page == "📅 Voir le Planning":
     jours_par_semaine = {}
     curr = start_date
     while curr <= end_date:
-        if curr.weekday() < 6: # Lundi à Samedi
-            semaine_num = curr.isocalendar()[1]
-            if semaine_num not in jours_par_semaine:
-                jours_par_semaine[semaine_num] = []
-            jours_par_semaine[semaine_num].append(curr)
+        if curr.weekday() < 6:
+            sem_num = curr.isocalendar()[1]
+            if sem_num not in jours_par_semaine: jours_par_semaine[sem_num] = []
+            jours_par_semaine[sem_num].append(curr)
         curr += timedelta(days=1)
 
     for num, jours in jours_par_semaine.items():
         st.markdown(f'<div class="week-header">Semaine {num}</div>', unsafe_allow_html=True)
         
-        colonnes = MEMBRES_EQUIPE + ["Total Présents"]
         indices = [f"{JOURS_FR[d.weekday()]} {d.day}" for d in jours]
-        df = pd.DataFrame(index=indices, columns=colonnes)
+        df = pd.DataFrame(index=indices, columns=MEMBRES_EQUIPE + ["Total Présents"])
 
         for d in jours:
             d_str = d.strftime("%Y-%m-%d")
@@ -134,17 +138,18 @@ if page == "📅 Voir le Planning":
             alerte = "🚨" if count_present < 3 else "👥"
             df.at[row_label, "Total Présents"] = f"{alerte} {count_present}"
 
-        # --- LOGIQUE DE COULEUR (Léo) ---
-        def highlight_days(row):
+        # Logic de couleur pour le Samedi (Léo)
+        def style_dark(row):
             if "Samedi" in row.name:
-                # Gris foncé avec texte blanc pour le Samedi
-                return ['background-color: #444444; color: white; font-weight: bold'] * len(row)
-            return [''] * len(row)
+                # Samedi : Fond gris foncé, texte blanc
+                return ['background-color: #333333; color: #ffffff; font-weight: bold'] * len(row)
+            # Autres jours : Fond noir, texte blanc
+            return ['background-color: #0e1117; color: #ffffff'] * len(row)
 
-        st.table(df.style.apply(highlight_days, axis=1))
+        st.table(df.style.apply(style_dark, axis=1))
 
 # ==========================================
-# PAGE 2 & 3 (Inchangées)
+# PAGE 2 & 3 (Restent fonctionnelles)
 # ==========================================
 elif page == "✉️ Demande de Congés":
     st.header("Soumettre une demande")
