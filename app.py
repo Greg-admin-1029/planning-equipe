@@ -16,9 +16,9 @@ CONGES_FILE = "conges_2026.json"
 
 # --- CONFIGURATION EMAIL ---
 # Note : Pour Gmail, utilisez un "Mot de passe d'application"
-EMAIL_EMETTEUR = "votre-email@gmail.com"
-EMAIL_MOT_DE_PASSE = "votre-code-secret"
-EMAIL_DESTINATAIRE = "votre-email-perso@gmail.com" 
+EMAIL_EMETTEUR = "ritalbest89@gmail.com"
+EMAIL_MOT_DE_PASSE = "mldm isei aeza oqig"
+EMAIL_DESTINATAIRE = "g.natale@tvtservices.ch" 
 
 JOURS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
