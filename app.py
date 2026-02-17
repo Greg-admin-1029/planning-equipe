@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import json
 import os
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime, date, timedelta
 
 # ==========================================
@@ -12,42 +14,72 @@ MANAGER_PASSWORD = "admin"
 DATA_FILE = "planning_2026.json"
 CONGES_FILE = "conges_2026.json"
 
+# --- CONFIGURATION EMAIL ---
+# Note : Pour Gmail, utilisez un "Mot de passe d'application"
+EMAIL_EMETTEUR = "votre-email@gmail.com"
+EMAIL_MOT_DE_PASSE = "votre-code-secret"
+EMAIL_DESTINATAIRE = "votre-email-perso@gmail.com" 
+
 JOURS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
 
 st.set_page_config(page_title="Planning 2026", layout="wide")
 
 # ==========================================
-# STYLE CSS (Forçage du Noir et Dark Mode)
+# FONCTION ENVOI MAIL
+# ==========================================
+def envoyer_email_notification(nom, type_c, debut, fin, motif):
+    sujet = f"🚨 Nouvelle demande de congé : {nom}"
+    corps = f"""
+    Bonjour,
+    
+    Un collaborateur a soumis une nouvelle demande :
+    - Nom : {nom}
+    - Type : {type_c}
+    - Période : du {debut} au {fin}
+    - Motif : {motif}
+    
+    Connectez-vous à l'application pour valider ou refuser.
+    """
+    msg = MIMEText(corps)
+    msg['Subject'] = sujet
+    msg['From'] = EMAIL_EMETTEUR
+    msg['To'] = EMAIL_DESTINATAIRE
+
+    try:
+        # Configuration pour Gmail (port 587)
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(EMAIL_EMETTEUR, EMAIL_MOT_DE_PASSE)
+            server.send_message(msg)
+        return True
+    except Exception as e:
+        st.error(f"Erreur d'envoi mail : {e}")
+        return False
+
+# ==========================================
+# STYLE CSS (Dark Mode Forcé)
 # ==========================================
 st.markdown("""
     <style>
-    /* Sidebar : Texte bien noir pour la lisibilité */
     .recap-container {
         padding: 10px; border-radius: 5px; background-color: #f0f2f6;
         margin-bottom: 10px; border-left: 5px solid #2c3e50; color: #000000 !important;
     }
     .recap-name { font-weight: bold; color: #000000 !important; }
     .recap-stats { font-size: 13px; color: #000000 !important; }
-    
-    /* Header de Semaine */
     .week-header {
         background-color: #1e1e1e; color: #ffffff; padding: 10px 15px;
         border-radius: 5px; margin-top: 25px; margin-bottom: 5px; 
         font-weight: bold; font-size: 18px; border: 1px solid #333;
     }
-
-    /* Forçage du tableau en mode sombre */
-    .stTable { background-color: #0e1117 !important; color: white !important; }
     table { width: 100%; border-collapse: collapse; background-color: #0e1117 !important; color: white !important; }
     th { background-color: #1e1e1e !important; color: white !important; border: 1px solid #333 !important; }
     td { border: 1px solid #333 !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# GESTION DES FICHIERS
-# ==========================================
+# (Les fonctions load_json, save_json et get_stats restent identiques...)
 def load_json(file):
     if os.path.exists(file):
         with open(file, "r") as f: return json.load(f)
@@ -82,22 +114,13 @@ with st.sidebar:
     current_stats = get_stats()
     for m in MEMBRES_EQUIPE:
         s = current_stats[m]
-        st.markdown(f"""
-        <div class="recap-container">
-            <div class="recap-name">{m}</div>
-            <div class="recap-stats">
-                🔑 Ferm. : {s['fermetures']} | ✈️ Vac. : {s['vacances']}<br>
-                🚫 Abs. : {s['absences']} | 🛠️ Sam. : {s['samedis']}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"""<div class="recap-container"><div class="recap-name">{m}</div><div class="recap-stats">🔑 Ferm. : {s['fermetures']} | ✈️ Vac. : {s['vacances']}<br>🚫 Abs. : {s['absences']} | 🛠️ Sam. : {s['samedis']}</div></div>""", unsafe_allow_html=True)
 
 # ==========================================
-# PAGE 1 : PLANNING (DARK MODE)
+# PAGE 1 : PLANNING
 # ==========================================
 if page == "📅 Voir le Planning":
     st.header("Planning de l'équipe 2026")
-    
     mois_actuel = datetime.now().month
     default_index = (mois_actuel - 1) if datetime.now().year == 2026 else 0
     mois_sel = st.selectbox("Mois", range(1, 13), index=default_index, format_func=lambda x: MOIS_FR[x-1])
@@ -117,82 +140,76 @@ if page == "📅 Voir le Planning":
 
     for num, jours in jours_par_semaine.items():
         st.markdown(f'<div class="week-header">Semaine {num}</div>', unsafe_allow_html=True)
-        
         indices = [f"{JOURS_FR[d.weekday()]} {d.day}" for d in jours]
         df = pd.DataFrame(index=indices, columns=MEMBRES_EQUIPE + ["Total Présents"])
-
         for d in jours:
             d_str = d.strftime("%Y-%m-%d")
             row_label = f"{JOURS_FR[d.weekday()]} {d.day}"
             count_present = len(MEMBRES_EQUIPE)
-            
             for m in MEMBRES_EQUIPE:
                 info = data_planning.get(d_str, {}).get(m, "Présent")
                 statut = info.get("statut", "Présent") if isinstance(info, dict) else info
                 note = info.get("note", "") if isinstance(info, dict) else ""
                 if statut in ["Absent", "Vacances"]: count_present -= 1
-                
                 icones = {"Présent":"✅","Télétravail":"🏠","Absent":"🚫","Fermeture":"🔑","Vacances":"✈️","Travail Samedi":"🛠️"}
                 df.at[row_label, m] = f"{note} {icones.get(statut, '✅')}" if note else icones.get(statut, "✅")
-            
             alerte = "🚨" if count_present < 3 else "👥"
             df.at[row_label, "Total Présents"] = f"{alerte} {count_present}"
 
-        # Logic de couleur pour le Samedi (Léo)
         def style_dark(row):
-            if "Samedi" in row.name:
-                # Samedi : Fond gris foncé, texte blanc
-                return ['background-color: #333333; color: #ffffff; font-weight: bold'] * len(row)
-            # Autres jours : Fond noir, texte blanc
+            if "Samedi" in row.name: return ['background-color: #333333; color: #ffffff; font-weight: bold'] * len(row)
             return ['background-color: #0e1117; color: #ffffff'] * len(row)
-
         st.table(df.style.apply(style_dark, axis=1))
 
 # ==========================================
-# PAGE 2 & 3 (Restent fonctionnelles)
+# PAGE 2 : CONGÉS (AVEC NOTIFICATION)
 # ==========================================
 elif page == "✉️ Demande de Congés":
     st.header("Soumettre une demande")
     with st.form("f"):
-        nom = st.selectbox("Nom", MEMBRES_EQUIPE); type_c = st.selectbox("Type", ["Vacances ✈️", "Absence 🚫", "Télétravail 🏠"])
+        nom = st.selectbox("Nom", MEMBRES_EQUIPE)
+        type_c = st.selectbox("Type", ["Vacances ✈️", "Absence 🚫", "Télétravail 🏠"])
         d1 = st.date_input("Du"); d2 = st.date_input("Au"); motif = st.text_area("Motif")
-        if st.form_submit_button("Envoyer"):
+        
+        if st.form_submit_button("Envoyer la demande"):
             if d1 <= d2:
-                data_conges[datetime.now().strftime("%f")] = {"nom":nom,"type":type_c,"debut":str(d1),"fin":str(d2),"motif":motif}
-                save_json(CONGES_FILE, data_conges); st.success("Demande envoyée !")
+                # 1. Sauvegarde locale
+                key = datetime.now().strftime("%f")
+                data_conges[key] = {"nom":nom,"type":type_c,"debut":str(d1),"fin":str(d2),"motif":motif}
+                save_json(CONGES_FILE, data_conges)
+                
+                # 2. Notification Email
+                envoi_reussi = envoyer_email_notification(nom, type_c, str(d1), str(d2), motif)
+                
+                if envoi_reussi:
+                    st.success(f"Merci {nom}, demande enregistrée et manager notifié par mail !")
+                else:
+                    st.warning("Demande enregistrée, mais la notification mail a échoué (vérifiez les réglages).")
+            else:
+                st.error("Dates invalides.")
 
 elif page == "🔒 Espace Manager":
     st.header("Administration")
     if st.text_input("Mot de passe", type="password") == MANAGER_PASSWORD:
         t1, t2, t3 = st.tabs(["Modification", "Actions Groupées", "Demandes"])
         with t1:
-            type_mod = st.radio("Mode", ["Jour unique", "Période"], horizontal=True)
             u_m = st.selectbox("Qui", MEMBRES_EQUIPE); s_m = st.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"]); n_m = st.text_input("Note")
-            if type_mod == "Jour unique": dates = [st.date_input("Jour", date(2026,1,1))]
-            else:
-                d_a = st.date_input("Début", date(2026,1,1)); d_b = st.date_input("Fin", date(2026,1,1))
-                dates = [d_a + timedelta(days=x) for x in range((d_b-d_a).days + 1)]
+            d_a = st.date_input("Début", date(2026,1,1)); d_b = st.date_input("Fin", date(2026,1,1))
             if st.button("Enregistrer"):
-                for d in dates:
-                    ds = d.strftime("%Y-%m-%d")
-                    if ds not in data_planning: data_planning[ds] = {}
-                    data_planning[ds][u_m] = {"statut":s_m, "note":n_m}
+                for d in [d_a + timedelta(days=x) for x in range((d_b-d_a).days + 1)]:
+                    ds = d.strftime("%Y-%m-%d"); data_planning.setdefault(ds, {})[u_m] = {"statut":s_m, "note":n_m}
                 save_json(DATA_FILE, data_planning); st.success("Mis à jour !"); st.rerun()
         with t2:
             st.subheader("Règles annuelles")
-            c1, c2, c3 = st.columns(3)
-            user_r = c1.selectbox("Pour qui ?", MEMBRES_EQUIPE, key="r1"); day_r = c2.selectbox("Chaque...", JOURS_FR[:6], key="r2"); stat_r = c3.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"], key="r3")
+            user_r = st.selectbox("Pour qui ?", MEMBRES_EQUIPE, key="r1"); day_r = st.selectbox("Chaque...", JOURS_FR[:6], key="r2"); stat_r = st.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"], key="r3")
             if st.button("Appliquer"):
                 idx = JOURS_FR.index(day_r); curr = date(2026,1,1)
                 while curr.year == 2026:
-                    if curr.weekday() == idx:
-                        ds = curr.strftime("%Y-%m-%d")
-                        if ds not in data_planning: data_planning[ds] = {}
-                        data_planning[ds][user_r] = {"statut":stat_r, "note":""}
+                    if curr.weekday() == idx: data_planning.setdefault(curr.strftime("%Y-%m-%d"), {})[user_r] = {"statut":stat_r, "note":""}
                     curr += timedelta(days=1)
                 save_json(DATA_FILE, data_planning); st.success("Fait !"); st.rerun()
         with t3:
             for k, v in list(data_conges.items()):
                 with st.expander(f"Demande de {v['nom']}"):
-                    st.write(f"Du {v['debut']} au {v['fin']}"); st.write(f"Motif: {v['motif']}")
+                    st.write(f"Du {v['debut']} au {v['fin']}\nMotif: {v['motif']}")
                     if st.button(f"Supprimer {k}"): del data_conges[k]; save_json(CONGES_FILE, data_conges); st.rerun()
