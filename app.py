@@ -144,21 +144,62 @@ elif page == "✉️ Congés":
 
 elif page == "🔒 Manager":
     if st.text_input("Mot de passe", type="password") == MANAGER_PASSWORD:
-        t1, t2 = st.tabs(["Modification", "Demandes"])
+        t1, t2 = st.tabs(["Modification Manuelle", "📥 Validation des Demandes"])
+        
         with t1:
-            u_m = st.selectbox("Qui", MEMBRES_EQUIPE); s_m = st.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"]); n_m = st.text_input("Note")
+            # (Votre code actuel de modification manuelle reste ici)
+            u_m = st.selectbox("Qui", MEMBRES_EQUIPE)
+            s_m = st.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"])
+            n_m = st.text_input("Note")
             d_a, d_b = st.date_input("Début"), st.date_input("Fin")
             if st.button("Enregistrer"):
                 new_rows = []
                 for d in [d_a + timedelta(days=x) for x in range((d_b-d_a).days + 1)]:
                     new_rows.append([d.strftime("%Y-%m-%d"), u_m, s_m, n_m])
                 planning_sheet.append_rows(new_rows)
-                st.success("Données sauvegardées sur Google Sheets !"); st.rerun()
+                st.success("Planning mis à jour !"); st.rerun()
+
         with t2:
+            st.subheader("Demandes de congés en attente")
             demandes = conges_sheet.get_all_records()
+            
+            if not demandes:
+                st.info("Aucune demande en attente.")
+            
             for i, d in enumerate(demandes):
-                with st.expander(f"Demande de {d['nom']} ({d['type']})"):
-                    st.write(f"Du {d['debut']} au {d['fin']}\nMotif: {d['motif']}")
-                    if st.button("Supprimer", key=f"del_{i}"):
-                        conges_sheet.delete_rows(i + 2) # +2 car index 1-based + header
+                # On crée un cadre visuel pour chaque demande
+                with st.expander(f"📌 {d['nom']} - {d['type']} (du {d['debut']} au {d['fin']})", expanded=True):
+                    st.write(f"**Motif :** {d['motif']}")
+                    st.write(f"**Date de la demande :** {d['date_demande']}")
+                    
+                    col1, col2, col3 = st.columns([1, 1, 2])
+                    
+                    # BOUTON ACCEPTER
+                    if col1.button("✅ Accepter", key=f"acc_{i}"):
+                        # 1. Calcul des dates
+                        start = datetime.strptime(d['debut'], "%Y-%m-%d").date()
+                        end = datetime.strptime(d['fin'], "%Y-%m-%d").date()
+                        
+                        # 2. Préparation des lignes pour le calendrier
+                        new_planning_rows = []
+                        current_d = start
+                        while current_d <= end:
+                            # On transforme "Vacances ✈️" en "Vacances" pour le calendrier
+                            statut_propre = d['type'].split(' ')[0] 
+                            new_planning_rows.append([current_d.strftime("%Y-%m-%d"), d['nom'], statut_propre, "Validé par Manager"])
+                            current_d += timedelta(days=1)
+                        
+                        # 3. Injection dans Google Sheets (Planning)
+                        planning_sheet.append_rows(new_planning_rows)
+                        
+                        # 4. Suppression de la demande (Congés)
+                        conges_sheet.delete_rows(i + 2) # +2 pour header et index
+                        
+                        st.success(f"Demande de {d['nom']} validée et ajoutée au planning !")
+                        st.rerun()
+                    
+                    # BOUTON REFUSER
+                    if col2.button("❌ Refuser", key=f"ref_{i}"):
+                        conges_sheet.delete_rows(i + 2)
+                        st.warning(f"Demande de {d['nom']} supprimée.")
                         st.rerun()
