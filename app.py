@@ -121,7 +121,7 @@ if page == "📅 Planning":
         st.markdown(f'<div class="week-header">Semaine {num}</div>', unsafe_allow_html=True)
         df = pd.DataFrame(index=[f"{JOURS_FR[d.weekday()]} {d.day}" for d in jours], columns=MEMBRES_EQUIPE + ["Total"])
         for d in jours:
-            ds, row, pres = d.strftime("%Y-%m-%d"), f"{JOURS_FR[d.weekday()]} {d.day}", len(MEMBRES_EQUIPE)
+            ds, row_label = f"{JOURS_FR[d.weekday()]} {d.strftime('%d/%m/%Y')}", pres = d.strftime("%Y-%m-%d"), f"{JOURS_FR[d.weekday()]} {d.day}", len(MEMBRES_EQUIPE)
             for m in MEMBRES_EQUIPE:
                 val = data_planning.get(ds, {}).get(m, {"statut": "Présent", "note": ""})
                 if val["statut"] in ["Absent", "Vacances"]: pres -= 1
