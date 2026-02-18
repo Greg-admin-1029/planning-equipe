@@ -136,11 +136,16 @@ elif page == "✉️ Congés":
     with st.form("f_conges"):
         nom = st.selectbox("Nom", MEMBRES_EQUIPE)
         type_c = st.selectbox("Type", ["Vacances ✈️", "Absence 🚫", "Télétravail 🏠"])
-        d1, d2, mot = st.date_input("Du"), st.date_input("Au"), st.text_area("Motif")
+d1 = st.date_input("Du", format="DD/MM/YYYY")
+        d2 = st.date_input("Au", format="DD/MM/YYYY")
+        
+        mot = st.text_area("Motif")
+        
         if st.form_submit_button("Envoyer"):
-            conges_sheet.append_row([nom, type_c, str(d1), str(d2), mot, datetime.now().strftime("%Y-%m-%d %H:%M")])
+            # On garde le format YYYY-MM-DD pour la base de données (Sheets) pour les tris
+            conges_sheet.append_row([nom, type_c, str(d1), str(d2), mot, datetime.now().strftime("%d/%m/%Y %H:%M")])
             envoyer_email_notification(nom, type_c, str(d1), str(d2), mot)
-            st.success("Demande enregistrée dans Google Sheets et Manager notifié !")
+            st.success("Demande enregistrée !")
 
 elif page == "🔒 Manager":
     if st.text_input("Mot de passe", type="password") == MANAGER_PASSWORD:
