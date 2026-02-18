@@ -100,50 +100,34 @@ with st.sidebar:
         s = current_stats[m]
         st.markdown(f'<div class="recap-container"><div class="recap-name">{m}</div><div class="recap-stats">🔑 {s["fermetures"]} | ✈️ {s["vacances"]} | 🚫 {s["absences"]} | 🛠️ {s["samedis"]}</div></div>', unsafe_allow_html=True)
 
-if page == "📅 Planning": # <-- C'est ici
+if page == "📅 Planning":
     st.header("Planning Équipe 2026")
     mois_actuel = datetime.now().month
-    mois_sel = st.selectbox("Mois", range(1, 13), index=mois_sel_index, format_func=lambda x: MOIS_FR[x-1])
+    mois_sel = st.selectbox("Mois", range(1, 13), index=mois_actuel-1, format_func=lambda x: MOIS_FR[x-1])
     
-    # ... (code de calcul des dates) ...
+    # Logique d'affichage par semaine (identique V15)
+    start_date = date(2026, mois_sel, 1)
+    end_date = (date(2026, mois_sel+1, 1) if mois_sel < 12 else date(2027, 1, 1)) - timedelta(days=1)
+    
+    jours_sem = {}
+    curr = start_date
+    while curr <= end_date:
+        if curr.weekday() < 6:
+            sn = curr.isocalendar()[1]
+            jours_sem.setdefault(sn, []).append(curr)
+        curr += timedelta(days=1)
 
     for num, jours in jours_sem.items():
         st.markdown(f'<div class="week-header">Semaine {num}</div>', unsafe_allow_html=True)
-        
-        # --- MODIFICATION ICI : Format de date 18/02/2026 ---
-        indices_dates = [f"{JOURS_FR[d.weekday()]} {d.strftime('%d/%m/%Y')}" for d in jours]
-        df = pd.DataFrame(index=indices_dates, columns=MEMBRES_EQUIPE + ["Total"])
-        
+        df = pd.DataFrame(index=[f"{JOURS_FR[d.weekday()]} {d.day}" for d in jours], columns=MEMBRES_EQUIPE + ["Total"])
         for d in jours:
-            ds = d.strftime("%Y-%m-%d")
-            # --- MODIFICATION ICI : Format de date pour la ligne ---
-            row_label = f"{JOURS_FR[d.weekday()]} {d.strftime('%d/%m/%Y')}"
-            pres = len(MEMBRES_EQUIPE)
-            
+            ds, row, pres = d.strftime("%Y-%m-%d"), f"{JOURS_FR[d.weekday()]} {d.day}", len(MEMBRES_EQUIPE)
             for m in MEMBRES_EQUIPE:
-                # On récupère les infos depuis Google Sheets
                 val = data_planning.get(ds, {}).get(m, {"statut": "Présent", "note": ""})
-                statut = val["statut"]
-                note = val["note"]
-                
-                if statut in ["Absent", "Vacances"]: 
-                    pres -= 1
-                
-                # --- MODIFICATION ICI : Dictionnaire d'icônes ---
-                icones = {
-                    "Présent": "✅",
-                    "Télétravail": "🏠",
-                    "Absent": "🚫",
-                    "Fermeture": "🔑",
-                    "Vacances": "✈️",
-                    "Travail Samedi": "🛠️"
-                }
-                
-                # Affichage : Icone + Note (si note existe)
-                icone_a_afficher = icones.get(statut, "✅")
-                df.at[row_label, m] = f"{note} {icone_a_afficher}" if note else icone_a_afficher
-            
-            df.at[row_label, "Total"] = f"{'🚨' if pres < 3 else '👥'} {pres}"
+                if val["statut"] in ["Absent", "Vacances"]: pres -= 1
+                icones = {"Présent":"✅","Télétravail":"🏠","Absent":"🚫","Fermeture":"🔑","Vacances":"✈️","Travail Samedi":"🛠️"}
+                df.at[row, m] = f"{val['note']} {icones.get(val['statut'], '✅')}" if val['note'] else icones.get(val['statut'], "✅")
+            df.at[row, "Total"] = f"{'🚨' if pres < 3 else '👥'} {pres}"
         
         st.table(df.style.apply(lambda r: ['background-color: #333; color: white; font-weight: bold']*len(r) if "Samedi" in r.name else ['background-color: #0e1117; color: white']*len(r), axis=1))
 
