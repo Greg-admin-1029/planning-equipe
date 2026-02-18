@@ -167,39 +167,38 @@ elif page == "🔒 Manager":
                 st.info("Aucune demande en attente.")
             
             for i, d in enumerate(demandes):
-                # On crée un cadre visuel pour chaque demande
-                with st.expander(f"📌 {d['nom']} - {d['type']} (du {d['debut']} au {d['fin']})", expanded=True):
+                # Formatage de l'affichage des dates pour le manager
+                try:
+                    # On transforme le format YYYY-MM-DD en DD/MM/YYYY pour l'affichage
+                    d_debut_fr = datetime.strptime(d['debut'], "%Y-%m-%d").strftime("%d/%m/%Y")
+                    d_fin_fr = datetime.strptime(d['fin'], "%Y-%m-%d").strftime("%d/%m/%Y")
+                except:
+                    d_debut_fr, d_fin_fr = d['debut'], d['fin']
+
+                with st.expander(f"📌 {d['nom']} - {d['type']} (du {d_debut_fr} au {d_fin_fr})", expanded=True):
                     st.write(f"**Motif :** {d['motif']}")
-                    st.write(f"**Date de la demande :** {d['date_demande']}")
                     
-                    col1, col2, col3 = st.columns([1, 1, 2])
+                    col1, col2 = st.columns([1, 1])
                     
-                    # BOUTON ACCEPTER
                     if col1.button("✅ Accepter", key=f"acc_{i}"):
-                        # 1. Calcul des dates
                         start = datetime.strptime(d['debut'], "%Y-%m-%d").date()
                         end = datetime.strptime(d['fin'], "%Y-%m-%d").date()
                         
-                        # 2. Préparation des lignes pour le calendrier
+                        # Extraction du statut propre (ex: "Vacances" au lieu de "Vacances ✈️")
+                        statut_brut = d['type'].split(' ')[0] 
+                        
                         new_planning_rows = []
                         current_d = start
                         while current_d <= end:
-                            # On transforme "Vacances ✈️" en "Vacances" pour le calendrier
-                            statut_propre = d['type'].split(' ')[0] 
-                            new_planning_rows.append([current_d.strftime("%Y-%m-%d"), d['nom'], statut_propre, "Validé par Manager"])
+                            # IMPORTANT : On enregistre le statut demandé pour que l'icône change !
+                            new_planning_rows.append([current_d.strftime("%Y-%m-%d"), d['nom'], statut_brut, "Validé"])
                             current_d += timedelta(days=1)
                         
-                        # 3. Injection dans Google Sheets (Planning)
                         planning_sheet.append_rows(new_planning_rows)
-                        
-                        # 4. Suppression de la demande (Congés)
-                        conges_sheet.delete_rows(i + 2) # +2 pour header et index
-                        
-                        st.success(f"Demande de {d['nom']} validée et ajoutée au planning !")
+                        conges_sheet.delete_rows(i + 2)
+                        st.success(f"Le calendrier a été mis à jour pour {d['nom']} en mode {statut_brut} !")
                         st.rerun()
                     
-                    # BOUTON REFUSER
                     if col2.button("❌ Refuser", key=f"ref_{i}"):
                         conges_sheet.delete_rows(i + 2)
-                        st.warning(f"Demande de {d['nom']} supprimée.")
                         st.rerun()
