@@ -129,7 +129,7 @@ elif page == "🔒 Manager":
                 curr = date(2026, 1, 1)
                 while curr.year == 2026:
                     if JOURS_FR[curr.weekday()] == a_jour:
-                        all_d.append([curr.strftime("%Y-%m-%d"), a_nom, a_stat, "Récurrent"])
+                        all_d.append([curr.strftime("%Y-%m-%d"), a_nom, a_stat])
                     curr += timedelta(days=1)
                 planning_sheet.append_rows(all_d)
                 st.success("Automatisations ajoutées !"); st.rerun()
