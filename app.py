@@ -1,215 +1,164 @@
 import streamlit as st
 import pandas as pd
-import json
-import os
+import gspread
+from google.oauth2.service_account import Credentials
+from datetime import datetime, date, timedelta
 import smtplib
 from email.mime.text import MIMEText
-from datetime import datetime, date, timedelta
 
 # ==========================================
-# CONFIGURATION
+# CONNEXION GOOGLE SHEETS
+# ==========================================
+def get_gsheet_connection():
+    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    # On utilise les secrets configurés dans le dashboard Streamlit
+    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+    client = gspread.authorize(creds)
+    return client.open("Planning_Data")
+
+try:
+    sheet = get_gsheet_connection()
+    planning_sheet = sheet.worksheet("planning")
+    conges_sheet = sheet.worksheet("conges")
+except Exception as e:
+    st.error(f"Erreur de connexion Google Sheets : {e}")
+    st.stop()
+
+# ==========================================
+# CONFIGURATION & STYLE
 # ==========================================
 MEMBRES_EQUIPE = ["William", "Ritchie", "Emmanuel", "Grégory", "Kyle"]
 MANAGER_PASSWORD = "admin"
-DATA_FILE = "planning_2026.json"
-CONGES_FILE = "conges_2026.json"
-
-# --- CONFIGURATION EMAIL ---
-# Note : Pour Gmail, utilisez un "Mot de passe d'application"
-EMAIL_EMETTEUR = "ritalbest89@gmail.com"
-EMAIL_MOT_DE_PASSE = "mldm isei aeza oqig"
-EMAIL_DESTINATAIRE = "g.natale@tvtservices.ch" 
-
 JOURS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
 
 st.set_page_config(page_title="Planning 2026", layout="wide")
 
-# ==========================================
-# FONCTION ENVOI MAIL
-# ==========================================
-def envoyer_email_notification(nom, type_c, debut, fin, motif):
-    sujet = f"🚨 Nouvelle demande de congé : {nom}"
-    corps = f"""
-    Bonjour,
-    
-    Un collaborateur a soumis une nouvelle demande :
-    - Nom : {nom}
-    - Type : {type_c}
-    - Période : du {debut} au {fin}
-    - Motif : {motif}
-    
-    Connectez-vous à l'application pour valider ou refuser.
-    """
-    msg = MIMEText(corps)
-    msg['Subject'] = sujet
-    msg['From'] = EMAIL_EMETTEUR
-    msg['To'] = EMAIL_DESTINATAIRE
-
-    try:
-        # Configuration pour Gmail (port 587)
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(EMAIL_EMETTEUR, EMAIL_MOT_DE_PASSE)
-            server.send_message(msg)
-        return True
-    except Exception as e:
-        st.error(f"Erreur d'envoi mail : {e}")
-        return False
-
-# ==========================================
-# STYLE CSS (Dark Mode Forcé)
-# ==========================================
+# (Style CSS identique à la V15 - Dark Mode & Samedi Gris)
 st.markdown("""
     <style>
-    .recap-container {
-        padding: 10px; border-radius: 5px; background-color: #f0f2f6;
-        margin-bottom: 10px; border-left: 5px solid #2c3e50; color: #000000 !important;
-    }
+    .recap-container { padding: 10px; border-radius: 5px; background-color: #f0f2f6; margin-bottom: 10px; border-left: 5px solid #2c3e50; color: #000000 !important; }
     .recap-name { font-weight: bold; color: #000000 !important; }
     .recap-stats { font-size: 13px; color: #000000 !important; }
-    .week-header {
-        background-color: #1e1e1e; color: #ffffff; padding: 10px 15px;
-        border-radius: 5px; margin-top: 25px; margin-bottom: 5px; 
-        font-weight: bold; font-size: 18px; border: 1px solid #333;
-    }
+    .week-header { background-color: #1e1e1e; color: #ffffff; padding: 10px 15px; border-radius: 5px; margin-top: 25px; margin-bottom: 5px; font-weight: bold; font-size: 18px; border: 1px solid #333; }
     table { width: 100%; border-collapse: collapse; background-color: #0e1117 !important; color: white !important; }
     th { background-color: #1e1e1e !important; color: white !important; border: 1px solid #333 !important; }
     td { border: 1px solid #333 !important; }
     </style>
 """, unsafe_allow_html=True)
 
-# (Les fonctions load_json, save_json et get_stats restent identiques...)
-def load_json(file):
-    if os.path.exists(file):
-        with open(file, "r") as f: return json.load(f)
-    return {}
+# ==========================================
+# FONCTIONS DE DONNÉES
+# ==========================================
+def load_planning_data():
+    records = planning_sheet.get_all_records()
+    plan_dict = {}
+    for r in records:
+        d = str(r['date'])
+        if d not in plan_dict: plan_dict[d] = {}
+        plan_dict[d][r['membre']] = {"statut": r['statut'], "note": r['note']}
+    return plan_dict
 
-def save_json(file, data):
-    with open(file, "w") as f: json.dump(data, f)
-
-data_planning = load_json(DATA_FILE)
-data_conges = load_json(CONGES_FILE)
-
-def get_stats():
+def get_stats(data):
     stats = {m: {"fermetures": 0, "vacances": 0, "absences": 0, "samedis": 0} for m in MEMBRES_EQUIPE}
-    for d_key, membres in data_planning.items():
+    for d_key, membres in data.items():
         for m, info in membres.items():
-            statut = info["statut"] if isinstance(info, dict) else info
             if m in stats:
-                if statut == "Fermeture": stats[m]["fermetures"] += 1
-                elif statut == "Vacances": stats[m]["vacances"] += 1
-                elif statut == "Absent": stats[m]["absences"] += 1
-                elif statut == "Travail Samedi": stats[m]["samedis"] += 1
+                s = info["statut"]
+                if s == "Fermeture": stats[m]["fermetures"] += 1
+                elif s == "Vacances": stats[m]["vacances"] += 1
+                elif s == "Absent": stats[m]["absences"] += 1
+                elif s == "Travail Samedi": stats[m]["samedis"] += 1
     return stats
 
+def envoyer_email_notification(nom, type_c, debut, fin, motif):
+    try:
+        conf = st.secrets["email"]
+        sujet = f"🚨 Nouvelle demande : {nom}"
+        corps = f"Collaborateur: {nom}\nType: {type_c}\nDu {debut} au {fin}\nMotif: {motif}"
+        msg = MIMEText(corps)
+        msg['Subject'], msg['From'], msg['To'] = sujet, conf["emetteur"], conf["destinataire"]
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(conf["emetteur"], conf["mot_de_passe"])
+            server.send_message(msg)
+        return True
+    except: return False
+
+# Chargement initial
+data_planning = load_planning_data()
+
 # ==========================================
-# BARRE LATÉRALE
+# NAVIGATION & PAGES
 # ==========================================
 with st.sidebar:
     st.title("Menu")
-    page = st.radio("Navigation", ["📅 Voir le Planning", "✉️ Demande de Congés", "🔒 Espace Manager"])
+    page = st.radio("Navigation", ["📅 Planning", "✉️ Congés", "🔒 Manager"])
     st.markdown("---")
-    st.subheader("📊 Récapitulatif 2026")
-    current_stats = get_stats()
+    current_stats = get_stats(data_planning)
     for m in MEMBRES_EQUIPE:
         s = current_stats[m]
-        st.markdown(f"""<div class="recap-container"><div class="recap-name">{m}</div><div class="recap-stats">🔑 Ferm. : {s['fermetures']} | ✈️ Vac. : {s['vacances']}<br>🚫 Abs. : {s['absences']} | 🛠️ Sam. : {s['samedis']}</div></div>""", unsafe_allow_html=True)
+        st.markdown(f'<div class="recap-container"><div class="recap-name">{m}</div><div class="recap-stats">🔑 {s["fermetures"]} | ✈️ {s["vacances"]} | 🚫 {s["absences"]} | 🛠️ {s["samedis"]}</div></div>', unsafe_allow_html=True)
 
-# ==========================================
-# PAGE 1 : PLANNING
-# ==========================================
-if page == "📅 Voir le Planning":
-    st.header("Planning de l'équipe 2026")
+if page == "📅 Planning":
+    st.header("Planning Équipe 2026")
     mois_actuel = datetime.now().month
-    default_index = (mois_actuel - 1) if datetime.now().year == 2026 else 0
-    mois_sel = st.selectbox("Mois", range(1, 13), index=default_index, format_func=lambda x: MOIS_FR[x-1])
+    mois_sel = st.selectbox("Mois", range(1, 13), index=mois_actuel-1, format_func=lambda x: MOIS_FR[x-1])
     
+    # Logique d'affichage par semaine (identique V15)
     start_date = date(2026, mois_sel, 1)
-    if mois_sel == 12: end_date = date(2027, 1, 1) - timedelta(days=1)
-    else: end_date = date(2026, mois_sel + 1, 1) - timedelta(days=1)
-
-    jours_par_semaine = {}
+    end_date = (date(2026, mois_sel+1, 1) if mois_sel < 12 else date(2027, 1, 1)) - timedelta(days=1)
+    
+    jours_sem = {}
     curr = start_date
     while curr <= end_date:
         if curr.weekday() < 6:
-            sem_num = curr.isocalendar()[1]
-            if sem_num not in jours_par_semaine: jours_par_semaine[sem_num] = []
-            jours_par_semaine[sem_num].append(curr)
+            sn = curr.isocalendar()[1]
+            jours_sem.setdefault(sn, []).append(curr)
         curr += timedelta(days=1)
 
-    for num, jours in jours_par_semaine.items():
+    for num, jours in jours_sem.items():
         st.markdown(f'<div class="week-header">Semaine {num}</div>', unsafe_allow_html=True)
-        indices = [f"{JOURS_FR[d.weekday()]} {d.day}" for d in jours]
-        df = pd.DataFrame(index=indices, columns=MEMBRES_EQUIPE + ["Total Présents"])
+        df = pd.DataFrame(index=[f"{JOURS_FR[d.weekday()]} {d.day}" for d in jours], columns=MEMBRES_EQUIPE + ["Total"])
         for d in jours:
-            d_str = d.strftime("%Y-%m-%d")
-            row_label = f"{JOURS_FR[d.weekday()]} {d.day}"
-            count_present = len(MEMBRES_EQUIPE)
+            ds, row, pres = d.strftime("%Y-%m-%d"), f"{JOURS_FR[d.weekday()]} {d.day}", len(MEMBRES_EQUIPE)
             for m in MEMBRES_EQUIPE:
-                info = data_planning.get(d_str, {}).get(m, "Présent")
-                statut = info.get("statut", "Présent") if isinstance(info, dict) else info
-                note = info.get("note", "") if isinstance(info, dict) else ""
-                if statut in ["Absent", "Vacances"]: count_present -= 1
+                val = data_planning.get(ds, {}).get(m, {"statut": "Présent", "note": ""})
+                if val["statut"] in ["Absent", "Vacances"]: pres -= 1
                 icones = {"Présent":"✅","Télétravail":"🏠","Absent":"🚫","Fermeture":"🔑","Vacances":"✈️","Travail Samedi":"🛠️"}
-                df.at[row_label, m] = f"{note} {icones.get(statut, '✅')}" if note else icones.get(statut, "✅")
-            alerte = "🚨" if count_present < 3 else "👥"
-            df.at[row_label, "Total Présents"] = f"{alerte} {count_present}"
+                df.at[row, m] = f"{val['note']} {icones.get(val['statut'], '✅')}" if val['note'] else icones.get(val['statut'], "✅")
+            df.at[row, "Total"] = f"{'🚨' if pres < 3 else '👥'} {pres}"
+        
+        st.table(df.style.apply(lambda r: ['background-color: #333; color: white; font-weight: bold']*len(r) if "Samedi" in r.name else ['background-color: #0e1117; color: white']*len(r), axis=1))
 
-        def style_dark(row):
-            if "Samedi" in row.name: return ['background-color: #333333; color: #ffffff; font-weight: bold'] * len(row)
-            return ['background-color: #0e1117; color: #ffffff'] * len(row)
-        st.table(df.style.apply(style_dark, axis=1))
-
-# ==========================================
-# PAGE 2 : CONGÉS (AVEC NOTIFICATION)
-# ==========================================
-elif page == "✉️ Demande de Congés":
-    st.header("Soumettre une demande")
-    with st.form("f"):
+elif page == "✉️ Congés":
+    st.header("Demande de Congés")
+    with st.form("f_conges"):
         nom = st.selectbox("Nom", MEMBRES_EQUIPE)
         type_c = st.selectbox("Type", ["Vacances ✈️", "Absence 🚫", "Télétravail 🏠"])
-        d1 = st.date_input("Du"); d2 = st.date_input("Au"); motif = st.text_area("Motif")
-        
-        if st.form_submit_button("Envoyer la demande"):
-            if d1 <= d2:
-                # 1. Sauvegarde locale
-                key = datetime.now().strftime("%f")
-                data_conges[key] = {"nom":nom,"type":type_c,"debut":str(d1),"fin":str(d2),"motif":motif}
-                save_json(CONGES_FILE, data_conges)
-                
-                # 2. Notification Email
-                envoi_reussi = envoyer_email_notification(nom, type_c, str(d1), str(d2), motif)
-                
-                if envoi_reussi:
-                    st.success(f"Merci {nom}, demande enregistrée et manager notifié par mail !")
-                else:
-                    st.warning("Demande enregistrée, mais la notification mail a échoué (vérifiez les réglages).")
-            else:
-                st.error("Dates invalides.")
+        d1, d2, mot = st.date_input("Du"), st.date_input("Au"), st.text_area("Motif")
+        if st.form_submit_button("Envoyer"):
+            conges_sheet.append_row([nom, type_c, str(d1), str(d2), mot, datetime.now().strftime("%Y-%m-%d %H:%M")])
+            envoyer_email_notification(nom, type_c, str(d1), str(d2), mot)
+            st.success("Demande enregistrée dans Google Sheets et Manager notifié !")
 
-elif page == "🔒 Espace Manager":
-    st.header("Administration")
+elif page == "🔒 Manager":
     if st.text_input("Mot de passe", type="password") == MANAGER_PASSWORD:
-        t1, t2, t3 = st.tabs(["Modification", "Actions Groupées", "Demandes"])
+        t1, t2 = st.tabs(["Modification", "Demandes"])
         with t1:
             u_m = st.selectbox("Qui", MEMBRES_EQUIPE); s_m = st.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"]); n_m = st.text_input("Note")
-            d_a = st.date_input("Début", date(2026,1,1)); d_b = st.date_input("Fin", date(2026,1,1))
+            d_a, d_b = st.date_input("Début"), st.date_input("Fin")
             if st.button("Enregistrer"):
+                new_rows = []
                 for d in [d_a + timedelta(days=x) for x in range((d_b-d_a).days + 1)]:
-                    ds = d.strftime("%Y-%m-%d"); data_planning.setdefault(ds, {})[u_m] = {"statut":s_m, "note":n_m}
-                save_json(DATA_FILE, data_planning); st.success("Mis à jour !"); st.rerun()
+                    new_rows.append([d.strftime("%Y-%m-%d"), u_m, s_m, n_m])
+                planning_sheet.append_rows(new_rows)
+                st.success("Données sauvegardées sur Google Sheets !"); st.rerun()
         with t2:
-            st.subheader("Règles annuelles")
-            user_r = st.selectbox("Pour qui ?", MEMBRES_EQUIPE, key="r1"); day_r = st.selectbox("Chaque...", JOURS_FR[:6], key="r2"); stat_r = st.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"], key="r3")
-            if st.button("Appliquer"):
-                idx = JOURS_FR.index(day_r); curr = date(2026,1,1)
-                while curr.year == 2026:
-                    if curr.weekday() == idx: data_planning.setdefault(curr.strftime("%Y-%m-%d"), {})[user_r] = {"statut":stat_r, "note":""}
-                    curr += timedelta(days=1)
-                save_json(DATA_FILE, data_planning); st.success("Fait !"); st.rerun()
-        with t3:
-            for k, v in list(data_conges.items()):
-                with st.expander(f"Demande de {v['nom']}"):
-                    st.write(f"Du {v['debut']} au {v['fin']}\nMotif: {v['motif']}")
-                    if st.button(f"Supprimer {k}"): del data_conges[k]; save_json(CONGES_FILE, data_conges); st.rerun()
+            demandes = conges_sheet.get_all_records()
+            for i, d in enumerate(demandes):
+                with st.expander(f"Demande de {d['nom']} ({d['type']})"):
+                    st.write(f"Du {d['debut']} au {d['fin']}\nMotif: {d['motif']}")
+                    if st.button("Supprimer", key=f"del_{i}"):
+                        conges_sheet.delete_rows(i + 2) # +2 car index 1-based + header
+                        st.rerun()
