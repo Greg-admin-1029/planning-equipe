@@ -29,7 +29,7 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 2. STYLE CSS (Dark Mode & Samedi Gris)
+# 2. STYLE CSS
 # ==========================================
 st.set_page_config(page_title="Planning 2026", layout="wide")
 st.markdown("""
@@ -92,11 +92,78 @@ with st.sidebar:
         st.markdown(f'<div class="recap-container"><b>{m}</b><br><small>🔑 {s["fermetures"]} | ✈️ {s["vacances"]} | 🚫 {s["absences"]} | 🛠️ {s["samedis"]}</small></div>', unsafe_allow_html=True)
 
 # ==========================================
-# 5. PAGE PLANNING (AFFICHAGE)
+# 5. PAGE PLANNING
 # ==========================================
 if page == "📅 Planning":
     st.header("Planning Équipe 2026")
     mois_sel = st.selectbox("Mois", range(1, 13), index=datetime.now().month-1, format_func=lambda x: MOIS_FR[x-1])
     
     start_date = date(2026, mois_sel, 1)
-    end_date = (date(20
+    # Correction de la ligne 102 (la parenthèse manquante)
+    if mois_sel < 12:
+        end_date = date(2026, mois_sel + 1, 1) - timedelta(days=1)
+    else:
+        end_date = date(2027, 1, 1) - timedelta(days=1)
+    
+    jours_sem = {}
+    curr = start_date
+    while curr <= end_date:
+        if curr.weekday() < 6:
+            sn = curr.isocalendar()[1]
+            jours_sem.setdefault(sn, []).append(curr)
+        curr += timedelta(days=1)
+
+    icones = {"Présent":"✅","Télétravail":"🏠","Absent":"🚫","Fermeture":"🔑","Vacances":"✈️","Travail Samedi":"🛠️"}
+
+    for num, jours in jours_sem.items():
+        st.markdown(f'<div class="week-header">Semaine {num}</div>', unsafe_allow_html=True)
+        
+        # Format de date JJ/MM/AAAA
+        indices_dates = [f"{JOURS_FR[d.weekday()]} {d.strftime('%d/%m/%Y')}" for d in jours]
+        df = pd.DataFrame(index=indices_dates, columns=MEMBRES_EQUIPE + ["Total"])
+        
+        for d in jours:
+            ds = d.strftime("%Y-%m-%d")
+            row_label = f"{JOURS_FR[d.weekday()]} {d.strftime('%d/%m/%Y')}"
+            pres = len(MEMBRES_EQUIPE)
+            
+            for m in MEMBRES_EQUIPE:
+                val = data_planning.get(ds, {}).get(m, {"statut": "Présent", "note": ""})
+                if val["statut"] in ["Absent", "Vacances"]: pres -= 1
+                
+                icone = icones.get(val["statut"], "✅")
+                df.at[row_label, m] = f"{val['note']} {icone}" if val['note'] else icone
+            
+            df.at[row_label, "Total"] = f"{'🚨' if pres < 3 else '👥'} {pres}"
+        
+        st.table(df.style.apply(lambda r: ['background-color: #333; color: white; font-weight: bold']*len(r) if "Samedi" in r.name else ['background-color: #0e1117; color: white']*len(r), axis=1))
+
+# ==========================================
+# 6. PAGE CONGÉS
+# ==========================================
+elif page == "✉️ Congés":
+    st.header("Demande de Congés")
+    with st.form("f_conges"):
+        nom = st.selectbox("Nom", MEMBRES_EQUIPE)
+        type_c = st.selectbox("Type", ["Vacances ✈️", "Absence 🚫", "Télétravail 🏠"])
+        
+        # Format de date européen ici
+        d1 = st.date_input("Du", format="DD/MM/YYYY")
+        d2 = st.date_input("Au", format="DD/MM/YYYY")
+        
+        mot = st.text_area("Motif")
+        if st.form_submit_button("Envoyer"):
+            conges_sheet.append_row([nom, type_c, str(d1), str(d2), mot, datetime.now().strftime("%d/%m/%Y %H:%M")])
+            envoyer_email_notification(nom, type_c, str(d1), str(d2), mot)
+            st.success("Demande enregistrée !")
+
+# ==========================================
+# 7. PAGE MANAGER
+# ==========================================
+elif page == "🔒 Manager":
+    pwd = st.text_input("Mot de passe", type="password")
+    if pwd == MANAGER_PASSWORD:
+        t1, t2 = st.tabs(["Saisie Manuelle", "📥 Validation"])
+        
+        with t1:
+            u_m = st.selectbox("Qui", MEMB
