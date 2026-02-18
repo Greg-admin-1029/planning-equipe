@@ -99,7 +99,6 @@ if page == "📅 Planning":
     mois_sel = st.selectbox("Mois", range(1, 13), index=datetime.now().month-1, format_func=lambda x: MOIS_FR[x-1])
     
     start_date = date(2026, mois_sel, 1)
-    # Correction de la ligne 102 (la parenthèse manquante)
     if mois_sel < 12:
         end_date = date(2026, mois_sel + 1, 1) - timedelta(days=1)
     else:
@@ -117,8 +116,6 @@ if page == "📅 Planning":
 
     for num, jours in jours_sem.items():
         st.markdown(f'<div class="week-header">Semaine {num}</div>', unsafe_allow_html=True)
-        
-        # Format de date JJ/MM/AAAA
         indices_dates = [f"{JOURS_FR[d.weekday()]} {d.strftime('%d/%m/%Y')}" for d in jours]
         df = pd.DataFrame(index=indices_dates, columns=MEMBRES_EQUIPE + ["Total"])
         
@@ -130,7 +127,6 @@ if page == "📅 Planning":
             for m in MEMBRES_EQUIPE:
                 val = data_planning.get(ds, {}).get(m, {"statut": "Présent", "note": ""})
                 if val["statut"] in ["Absent", "Vacances"]: pres -= 1
-                
                 icone = icones.get(val["statut"], "✅")
                 df.at[row_label, m] = f"{val['note']} {icone}" if val['note'] else icone
             
@@ -146,11 +142,8 @@ elif page == "✉️ Congés":
     with st.form("f_conges"):
         nom = st.selectbox("Nom", MEMBRES_EQUIPE)
         type_c = st.selectbox("Type", ["Vacances ✈️", "Absence 🚫", "Télétravail 🏠"])
-        
-        # Format de date européen ici
         d1 = st.date_input("Du", format="DD/MM/YYYY")
         d2 = st.date_input("Au", format="DD/MM/YYYY")
-        
         mot = st.text_area("Motif")
         if st.form_submit_button("Envoyer"):
             conges_sheet.append_row([nom, type_c, str(d1), str(d2), mot, datetime.now().strftime("%d/%m/%Y %H:%M")])
@@ -164,6 +157,38 @@ elif page == "🔒 Manager":
     pwd = st.text_input("Mot de passe", type="password")
     if pwd == MANAGER_PASSWORD:
         t1, t2 = st.tabs(["Saisie Manuelle", "📥 Validation"])
-        
         with t1:
-            u_m = st.selectbox("Qui", MEMB
+            u_m = st.selectbox("Qui", MEMBRES_EQUIPE)
+            s_m = st.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"])
+            n_m = st.text_input("Note")
+            d_a = st.date_input("Début", key="da_man", format="DD/MM/YYYY")
+            d_b = st.date_input("Fin", key="db_man", format="DD/MM/YYYY")
+            if st.button("Enregistrer"):
+                new_rows = [[(d_a + timedelta(days=x)).strftime("%Y-%m-%d"), u_m, s_m, n_m] for x in range((d_b-d_a).days + 1)]
+                planning_sheet.append_rows(new_rows)
+                st.success("Planning mis à jour !")
+                st.rerun()
+        with t2:
+            demandes = conges_sheet.get_all_records()
+            if not demandes:
+                st.info("Aucune demande.")
+            for i, d in enumerate(demandes):
+                try:
+                    d_debut_fr = datetime.strptime(d['debut'], "%Y-%m-%d").strftime("%d/%m/%Y")
+                    d_fin_fr = datetime.strptime(d['fin'], "%Y-%m-%d").strftime("%d/%m/%Y")
+                except:
+                    d_debut_fr, d_fin_fr = d['debut'], d['fin']
+                with st.expander(f"📌 {d['nom']} : {d['type']} (du {d_debut_fr} au {d_fin_fr})"):
+                    st.write(f"Motif: {d['motif']}")
+                    c1, c2 = st.columns(2)
+                    if c1.button("✅ Accepter", key=f"acc_{i}"):
+                        start = datetime.strptime(d['debut'], "%Y-%m-%d").date()
+                        end = datetime.strptime(d['fin'], "%Y-%m-%d").date()
+                        statut_net = d['type'].split(' ')[0]
+                        rows = [[(start + timedelta(days=x)).strftime("%Y-%m-%d"), d['nom'], statut_net, "Validé"] for x in range((end-start).days + 1)]
+                        planning_sheet.append_rows(rows)
+                        conges_sheet.delete_rows(i + 2)
+                        st.rerun()
+                    if c2.button("❌ Refuser", key=f"ref_{i}"):
+                        conges_sheet.delete_rows(i + 2)
+                        st.rerun()
