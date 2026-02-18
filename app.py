@@ -7,11 +7,15 @@ import smtplib
 from email.mime.text import MIMEText
 
 # ==========================================
-# CONNEXION GOOGLE SHEETS
+# 1. CONNEXION GOOGLE SHEETS & CONFIG
 # ==========================================
+MEMBRES_EQUIPE = ["William", "Ritchie", "Emmanuel", "Grégory", "Kyle"]
+MANAGER_PASSWORD = "admin"
+JOURS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
+
 def get_gsheet_connection():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    # On utilise les secrets configurés dans le dashboard Streamlit
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
     client = gspread.authorize(creds)
     return client.open("Planning_Data")
@@ -25,30 +29,20 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# CONFIGURATION & STYLE
+# 2. STYLE CSS (Dark Mode & Samedi Gris)
 # ==========================================
-MEMBRES_EQUIPE = ["William", "Ritchie", "Emmanuel", "Grégory", "Kyle"]
-MANAGER_PASSWORD = "admin"
-JOURS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
-MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
-
 st.set_page_config(page_title="Planning 2026", layout="wide")
-
-# (Style CSS identique à la V15 - Dark Mode & Samedi Gris)
 st.markdown("""
     <style>
-    .recap-container { padding: 10px; border-radius: 5px; background-color: #f0f2f6; margin-bottom: 10px; border-left: 5px solid #2c3e50; color: #000000 !important; }
-    .recap-name { font-weight: bold; color: #000000 !important; }
-    .recap-stats { font-size: 13px; color: #000000 !important; }
-    .week-header { background-color: #1e1e1e; color: #ffffff; padding: 10px 15px; border-radius: 5px; margin-top: 25px; margin-bottom: 5px; font-weight: bold; font-size: 18px; border: 1px solid #333; }
-    table { width: 100%; border-collapse: collapse; background-color: #0e1117 !important; color: white !important; }
-    th { background-color: #1e1e1e !important; color: white !important; border: 1px solid #333 !important; }
-    td { border: 1px solid #333 !important; }
+    .recap-container { padding: 10px; border-radius: 5px; background-color: #f0f2f6; margin-bottom: 10px; border-left: 5px solid #2c3e50; color: #000; }
+    .week-header { background-color: #1e1e1e; color: #ffffff; padding: 10px; border-radius: 5px; margin: 20px 0 5px 0; font-weight: bold; border: 1px solid #333; }
+    table { width: 100%; background-color: #0e1117 !important; color: white !important; }
+    th { background-color: #1e1e1e !important; color: white !important; }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# FONCTIONS DE DONNÉES
+# 3. FONCTIONS UTILES
 # ==========================================
 def load_planning_data():
     records = planning_sheet.get_all_records()
@@ -74,22 +68,19 @@ def get_stats(data):
 def envoyer_email_notification(nom, type_c, debut, fin, motif):
     try:
         conf = st.secrets["email"]
-        sujet = f"🚨 Nouvelle demande : {nom}"
-        corps = f"Collaborateur: {nom}\nType: {type_c}\nDu {debut} au {fin}\nMotif: {motif}"
-        msg = MIMEText(corps)
-        msg['Subject'], msg['From'], msg['To'] = sujet, conf["emetteur"], conf["destinataire"]
+        msg = MIMEText(f"Demande de: {nom}\nType: {type_c}\nDu: {debut}\nAu: {fin}\nMotif: {motif}")
+        msg['Subject'] = f"🚨 Nouvelle demande : {nom}"
+        msg['From'], msg['To'] = conf["emetteur"], conf["destinataire"]
         with smtplib.SMTP("smtp.gmail.com", 587) as server:
             server.starttls()
             server.login(conf["emetteur"], conf["mot_de_passe"])
             server.send_message(msg)
-        return True
-    except: return False
+    except: pass
 
-# Chargement initial
 data_planning = load_planning_data()
 
 # ==========================================
-# NAVIGATION & PAGES
+# 4. NAVIGATION SIDEBAR
 # ==========================================
 with st.sidebar:
     st.title("Menu")
@@ -98,112 +89,14 @@ with st.sidebar:
     current_stats = get_stats(data_planning)
     for m in MEMBRES_EQUIPE:
         s = current_stats[m]
-        st.markdown(f'<div class="recap-container"><div class="recap-name">{m}</div><div class="recap-stats">🔑 {s["fermetures"]} | ✈️ {s["vacances"]} | 🚫 {s["absences"]} | 🛠️ {s["samedis"]}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="recap-container"><b>{m}</b><br><small>🔑 {s["fermetures"]} | ✈️ {s["vacances"]} | 🚫 {s["absences"]} | 🛠️ {s["samedis"]}</small></div>', unsafe_allow_html=True)
 
+# ==========================================
+# 5. PAGE PLANNING (AFFICHAGE)
+# ==========================================
 if page == "📅 Planning":
     st.header("Planning Équipe 2026")
-    mois_actuel = datetime.now().month
-    mois_sel = st.selectbox("Mois", range(1, 13), index=mois_actuel-1, format_func=lambda x: MOIS_FR[x-1])
+    mois_sel = st.selectbox("Mois", range(1, 13), index=datetime.now().month-1, format_func=lambda x: MOIS_FR[x-1])
     
-    # Logique d'affichage par semaine (identique V15)
     start_date = date(2026, mois_sel, 1)
-    end_date = (date(2026, mois_sel+1, 1) if mois_sel < 12 else date(2027, 1, 1)) - timedelta(days=1)
-    
-    jours_sem = {}
-    curr = start_date
-    while curr <= end_date:
-        if curr.weekday() < 6:
-            sn = curr.isocalendar()[1]
-            jours_sem.setdefault(sn, []).append(curr)
-        curr += timedelta(days=1)
-
-    for num, jours in jours_sem.items():
-        st.markdown(f'<div class="week-header">Semaine {num}</div>', unsafe_allow_html=True)
-        df = pd.DataFrame(index=[f"{JOURS_FR[d.weekday()]} {d.day}" for d in jours], columns=MEMBRES_EQUIPE + ["Total"])
-        for d in jours:
-            ds, row, pres = d.strftime("%Y-%m-%d"), f"{JOURS_FR[d.weekday()]} {d.day}", len(MEMBRES_EQUIPE)
-            for m in MEMBRES_EQUIPE:
-                val = data_planning.get(ds, {}).get(m, {"statut": "Présent", "note": ""})
-                if val["statut"] in ["Absent", "Vacances"]: pres -= 1
-                icones = {"Présent":"✅","Télétravail":"🏠","Absent":"🚫","Fermeture":"🔑","Vacances":"✈️","Travail Samedi":"🛠️"}
-                df.at[row, m] = f"{val['note']} {icones.get(val['statut'], '✅')}" if val['note'] else icones.get(val['statut'], "✅")
-            df.at[row, "Total"] = f"{'🚨' if pres < 3 else '👥'} {pres}"
-        
-        st.table(df.style.apply(lambda r: ['background-color: #333; color: white; font-weight: bold']*len(r) if "Samedi" in r.name else ['background-color: #0e1117; color: white']*len(r), axis=1))
-
-elif page == "✉️ Congés":
-    st.header("Demande de Congés")
-    with st.form("f_conges"):
-        nom = st.selectbox("Nom", MEMBRES_EQUIPE)
-        type_c = st.selectbox("Type", ["Vacances ✈️", "Absence 🚫", "Télétravail 🏠"])
-d1 = st.date_input("Du", format="DD/MM/YYYY")
-        d2 = st.date_input("Au", format="DD/MM/YYYY")
-        
-        mot = st.text_area("Motif")
-        
-        if st.form_submit_button("Envoyer"):
-            # On garde le format YYYY-MM-DD pour la base de données (Sheets) pour les tris
-            conges_sheet.append_row([nom, type_c, str(d1), str(d2), mot, datetime.now().strftime("%d/%m/%Y %H:%M")])
-            envoyer_email_notification(nom, type_c, str(d1), str(d2), mot)
-            st.success("Demande enregistrée !")
-
-elif page == "🔒 Manager":
-    if st.text_input("Mot de passe", type="password") == MANAGER_PASSWORD:
-        t1, t2 = st.tabs(["Modification Manuelle", "📥 Validation des Demandes"])
-        
-        with t1:
-            # (Votre code actuel de modification manuelle reste ici)
-            u_m = st.selectbox("Qui", MEMBRES_EQUIPE)
-            s_m = st.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"])
-            n_m = st.text_input("Note")
-            d_a, d_b = st.date_input("Début"), st.date_input("Fin")
-            if st.button("Enregistrer"):
-                new_rows = []
-                for d in [d_a + timedelta(days=x) for x in range((d_b-d_a).days + 1)]:
-                    new_rows.append([d.strftime("%Y-%m-%d"), u_m, s_m, n_m])
-                planning_sheet.append_rows(new_rows)
-                st.success("Planning mis à jour !"); st.rerun()
-
-        with t2:
-            st.subheader("Demandes de congés en attente")
-            demandes = conges_sheet.get_all_records()
-            
-            if not demandes:
-                st.info("Aucune demande en attente.")
-            
-            for i, d in enumerate(demandes):
-                # Formatage de l'affichage des dates pour le manager
-                try:
-                    # On transforme le format YYYY-MM-DD en DD/MM/YYYY pour l'affichage
-                    d_debut_fr = datetime.strptime(d['debut'], "%Y-%m-%d").strftime("%d/%m/%Y")
-                    d_fin_fr = datetime.strptime(d['fin'], "%Y-%m-%d").strftime("%d/%m/%Y")
-                except:
-                    d_debut_fr, d_fin_fr = d['debut'], d['fin']
-
-                with st.expander(f"📌 {d['nom']} - {d['type']} (du {d_debut_fr} au {d_fin_fr})", expanded=True):
-                    st.write(f"**Motif :** {d['motif']}")
-                    
-                    col1, col2 = st.columns([1, 1])
-                    
-                    if col1.button("✅ Accepter", key=f"acc_{i}"):
-                        start = datetime.strptime(d['debut'], "%Y-%m-%d").date()
-                        end = datetime.strptime(d['fin'], "%Y-%m-%d").date()
-                        
-                        # Extraction du statut propre (ex: "Vacances" au lieu de "Vacances ✈️")
-                        statut_brut = d['type'].split(' ')[0] 
-                        
-                        new_planning_rows = []
-                        current_d = start
-                        while current_d <= end:
-                            # IMPORTANT : On enregistre le statut demandé pour que l'icône change !
-                            new_planning_rows.append([current_d.strftime("%Y-%m-%d"), d['nom'], statut_brut, "Validé"])
-                            current_d += timedelta(days=1)
-                        
-                        planning_sheet.append_rows(new_planning_rows)
-                        conges_sheet.delete_rows(i + 2)
-                        st.success(f"Le calendrier a été mis à jour pour {d['nom']} en mode {statut_brut} !")
-                        st.rerun()
-                    
-                    if col2.button("❌ Refuser", key=f"ref_{i}"):
-                        conges_sheet.delete_rows(i + 2)
-                        st.rerun()
+    end_date = (date(20
