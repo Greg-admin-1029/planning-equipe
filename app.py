@@ -7,18 +7,18 @@ import smtplib
 from email.mime.text import MIMEText
 
 # ==========================================
-# 1. CONNEXION & CONFIG
+# 1. CONNEXION (MISE EN CACHE POUR ÉVITER L'ERREUR 429)
 # ==========================================
 MEMBRES_EQUIPE = ["William", "Ritchie", "Emmanuel", "Grégory", "Kyle"]
 MANAGER_PASSWORD = "admin"
 JOURS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
 MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"]
 
+@st.cache_resource
 def get_gsheet_connection():
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
-    client = gspread.authorize(creds)
-    return client.open("Planning_Data")
+    return gspread.authorize(creds).open("Planning_Data")
 
 try:
     sheet = get_gsheet_connection()
@@ -29,29 +29,28 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# 2. FONCTIONS DE DONNÉES
+# 2. CHARGEMENT OPTIMISÉ DES DONNÉES
 # ==========================================
-def load_planning_data():
+def load_all_data():
+    # On lit tout d'un coup pour économiser le quota API
     records = planning_sheet.get_all_records()
     plan_dict = {}
     for r in records:
-        d = str(r['date'])
-        if d not in plan_dict: plan_dict[d] = {}
-        plan_dict[d][r['membre']] = {"statut": r['statut'], "note": r['note']}
+        d_str = str(r['date'])
+        if d_str not in plan_dict: plan_dict[d_str] = {}
+        plan_dict[d_str][r['membre']] = {"statut": r['statut'], "note": r['note']}
     return plan_dict
 
-data_planning = load_planning_data()
+data_planning = load_all_data()
 
 # ==========================================
-# 3. INTERFACE & NAVIGATION
+# 3. INTERFACE
 # ==========================================
 st.set_page_config(page_title="Planning Équipe", layout="wide")
-with st.sidebar:
-    st.title("Menu")
-    page = st.radio("Navigation", ["📅 Planning", "✉️ Congés", "🔒 Manager"])
+page = st.sidebar.radio("Navigation", ["📅 Planning", "✉️ Congés", "🔒 Manager"])
 
 # ==========================================
-# 5. PAGE PLANNING (AFFICHAGE FR)
+# 4. PLANNING (FORMAT FR & ICÔNES)
 # ==========================================
 if page == "📅 Planning":
     st.header("Planning Équipe 2026")
@@ -63,7 +62,7 @@ if page == "📅 Planning":
     jours_sem = {}
     curr = start_date
     while curr <= end_date:
-        if curr.weekday() < 6:
+        if curr.weekday() < 6: # Pas de dimanche
             sn = curr.isocalendar()[1]
             jours_sem.setdefault(sn, []).append(curr)
         curr += timedelta(days=1)
@@ -79,13 +78,14 @@ if page == "📅 Planning":
             ds = d.strftime("%Y-%m-%d")
             row_label = f"{JOURS_FR[d.weekday()]} {d.strftime('%d/%m/%Y')}"
             for m in MEMBRES_EQUIPE:
-                val = data_planning.get(ds, {}).get(m, {"statut": "Présent", "note": ""})
-                df.at[row_label, m] = f"{val['note']} {icones.get(val['statut'], '✅')}" if val['note'] else icones.get(val['statut'], "✅")
-        
+                info = data_planning.get(ds, {}).get(m, {"statut": "Présent", "note": ""})
+                statut = info["statut"]
+                note = info["note"]
+                df.at[row_label, m] = f"{note} {icones.get(statut, '✅')}" if note else icones.get(statut, "✅")
         st.table(df)
 
 # ==========================================
-# 6. PAGE CONGÉS
+# 5. CONGÉS (FORMAT DATE FR)
 # ==========================================
 elif page == "✉️ Congés":
     st.header("Demande de Congés")
@@ -95,77 +95,55 @@ elif page == "✉️ Congés":
         d1 = st.date_input("Du", format="DD/MM/YYYY")
         d2 = st.date_input("Au", format="DD/MM/YYYY")
         mot = st.text_area("Motif")
-        if st.form_submit_button("Envoyer la demande"):
+        if st.form_submit_button("Envoyer"):
             conges_sheet.append_row([nom, type_c, str(d1), str(d2), mot, datetime.now().strftime("%d/%m/%Y %H:%M")])
-            st.success("Demande enregistrée !")
+            st.success("Demande envoyée !")
 
 # ==========================================
-# 7. PAGE MANAGER (RETOUR DES FONCTIONS)
+# 6. MANAGER (PÉRIODES, AUTO, VALIDATION)
 # ==========================================
 elif page == "🔒 Manager":
     if st.text_input("Mot de passe", type="password") == MANAGER_PASSWORD:
-        tab_period, tab_auto, tab_valid = st.tabs(["📅 Par Période", "⚙️ Automatisations", "📥 Validation"])
+        t_per, t_auto, t_val = st.tabs(["📅 Périodes", "⚙️ Automatisations", "📥 Validation"])
 
-        # --- ONGLET 1 : MODIFICATION PAR PÉRIODE ---
-        with tab_period:
-            st.subheader("Modifier une période spécifique")
-            col1, col2 = st.columns(2)
-            with col1:
-                u_m = st.selectbox("Collaborateur", MEMBRES_EQUIPE, key="u1")
-                s_m = st.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"], key="s1")
-            with col2:
-                d_debut = st.date_input("Date de début", format="DD/MM/YYYY", key="d1")
-                d_fin = st.date_input("Date de fin", format="DD/MM/YYYY", key="d2")
-            
-            n_m = st.text_input("Note particulière (ex: 'Rdv médical')", key="n1")
-            
-            if st.button("Appliquer à la période"):
-                new_rows = []
-                delta = (d_fin - d_debut).days
-                for i in range(delta + 1):
-                    jour = d_debut + timedelta(days=i)
-                    new_rows.append([jour.strftime("%Y-%m-%d"), u_m, s_m, n_m])
-                planning_sheet.append_rows(new_rows)
-                st.success(f"Période mise à jour pour {u_m} !")
-                st.rerun()
+        with t_per:
+            c1, c2 = st.columns(2)
+            u = c1.selectbox("Qui", MEMBRES_EQUIPE, key="u_per")
+            s = c1.selectbox("Statut", ["Présent","Télétravail","Absent","Fermeture","Vacances","Travail Samedi"])
+            d_s = c2.date_input("Début", format="DD/MM/YYYY", key="ds_per")
+            d_e = c2.date_input("Fin", format="DD/MM/YYYY", key="de_per")
+            note = st.text_input("Note")
+            if st.button("Enregistrer la période"):
+                rows = [[(d_s + timedelta(days=x)).strftime("%Y-%m-%d"), u, s, note] for x in range((d_e-d_s).days + 1)]
+                planning_sheet.append_rows(rows)
+                st.success("Planning mis à jour !"); st.rerun()
 
-        # --- ONGLET 2 : AUTOMATISATIONS (Télétravail/Fermeture) ---
-        with tab_auto:
-            st.subheader("Règles hebdomadaires (Toute l'année)")
-            st.info("Exemple : Ritchie en Télétravail tous les Mardis.")
-            
-            c1, c2, c3 = st.columns(3)
-            with c1: auto_nom = st.selectbox("Qui", MEMBRES_EQUIPE)
-            with c2: auto_jour = st.selectbox("Quel jour", JOURS_FR)
-            with c3: auto_statut = st.selectbox("Statut récurrent", ["Télétravail", "Fermeture", "Présent"])
-            
-            if st.button("Générer pour l'année 2026"):
-                all_dates = []
+        with t_auto:
+            st.write("Régler un jour récurrent pour toute l'année 2026")
+            col_q, col_j, col_s = st.columns(3)
+            a_nom = col_q.selectbox("Qui", MEMBRES_EQUIPE, key="a_n")
+            a_jour = col_j.selectbox("Jour", JOURS_FR, key="a_j")
+            a_stat = col_s.selectbox("Statut", ["Télétravail", "Fermeture", "Présent"], key="a_s")
+            if st.button("Générer l'année"):
+                all_d = []
                 curr = date(2026, 1, 1)
                 while curr.year == 2026:
-                    if JOURS_FR[curr.weekday()] == auto_jour:
-                        all_dates.append([curr.strftime("%Y-%m-%d"), auto_nom, auto_statut, "Récurrent"])
+                    if JOURS_FR[curr.weekday()] == a_jour:
+                        all_d.append([curr.strftime("%Y-%m-%d"), a_nom, a_stat, "Récurrent"])
                     curr += timedelta(days=1)
-                planning_sheet.append_rows(all_dates)
-                st.success(f"C'est fait ! {auto_nom} est en {auto_statut} tous les {auto_jour}s.")
+                planning_sheet.append_rows(all_d)
+                st.success("Automatisations ajoutées !"); st.rerun()
 
-        # --- ONGLET 3 : VALIDATION DES DEMANDES ---
-        with tab_valid:
+        with t_val:
             demandes = conges_sheet.get_all_records()
-            if not demandes: st.info("Aucune demande en attente.")
             for i, d in enumerate(demandes):
-                with st.expander(f"Demande de {d['nom']} ({d['type']})"):
-                    st.write(f"Du {d['debut']} au {d['fin']} - Motif: {d['motif']}")
-                    col_a, col_r = st.columns(2)
-                    if col_a.button("✅ Accepter", key=f"v_{i}"):
-                        # Conversion et injection auto
+                with st.expander(f"Demande : {d['nom']} ({d['type']})"):
+                    st.write(f"Dates: {d['debut']} au {d['fin']}")
+                    if st.button("✅ Valider", key=f"v{i}"):
                         start = datetime.strptime(d['debut'], "%Y-%m-%d").date()
                         end = datetime.strptime(d['fin'], "%Y-%m-%d").date()
-                        statut = d['type'].split(' ')[0]
-                        rows = [[(start + timedelta(days=x)).strftime("%Y-%m-%d"), d['nom'], statut, "Validé"] for x in range((end-start).days+1)]
+                        st_net = d['type'].split(' ')[0]
+                        rows = [[(start + timedelta(days=x)).strftime("%Y-%m-%d"), d['nom'], st_net, "Validé"] for x in range((end-start).days + 1)]
                         planning_sheet.append_rows(rows)
-                        conges_sheet.delete_rows(i + 2)
-                        st.rerun()
-                    if col_r.button("❌ Refuser", key=f"ref_{i}"):
                         conges_sheet.delete_rows(i + 2)
                         st.rerun()
